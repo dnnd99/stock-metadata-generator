@@ -4,6 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Stock Icon Metadata Generator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
   :root {
     --bg: #0b0d12;
@@ -34,7 +35,7 @@
     margin-bottom: 16px;
   }
   label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
-  input[type="text"], textarea {
+  input[type="text"], textarea, select {
     width: 100%;
     background: #0f1117;
     border: 1px solid var(--border);
@@ -79,9 +80,18 @@
     <label>Pilih gambar icon (PNG/JPG, bisa banyak sekaligus)</label>
     <input type="file" id="fileInput" accept="image/png,image/jpeg" multiple />
 
-    <div class="row">
+    <label>Ekstensi file yang mau dijual (buat nama file di CSV)</label>
+    <select id="sourceExt">
+      <option value=".eps">.eps (vector)</option>
+      <option value=".ai">.ai</option>
+      <option value=".svg">.svg</option>
+      <option value=".png">.png</option>
+      <option value=".jpg">.jpg</option>
+    </select>
+
+    <div class="row" style="margin-top:14px;">
       <button id="runBtn">Generate Metadata</button>
-      <button id="csvBtn" class="secondary" disabled>Download CSV</button>
+      <button id="csvBtn" class="secondary" disabled>Download CSV (6 Platform)</button>
     </div>
   </div>
 
@@ -195,6 +205,15 @@ runBtn.addEventListener("click", async () => {
   const nicheKeywords = nicheKeywordsInput.value
     .split(",").map((s) => s.trim()).filter(Boolean);
 
+  if (nicheKeywords.length === 0) {
+    const proceed = confirm(
+      "Field 'Niche keywords tetap' masih KOSONG.\n\n" +
+      "Kalau lanjut, icon-icon ini TIDAK akan dapet keyword niche tambahan (misal: 'america 250', 'bento box', dll).\n\n" +
+      "Lanjutkan tanpa niche keyword?"
+    );
+    if (!proceed) return;
+  }
+
   results = [];
   resultsBody.innerHTML = "";
   runBtn.disabled = true;
@@ -209,33 +228,114 @@ runBtn.addEventListener("click", async () => {
   csvBtn.disabled = results.every((r) => !r.ok);
 });
 
-function csvEscape(val) {
+const ADOBE_CATEGORIES = [
+  "Animals", "Buildings and architecture", "Business", "Drinks",
+  "The environment", "States of mind", "Food", "Graphic resources",
+  "Hobbies and leisure", "Industry", "Landscape", "Lifestyle",
+  "People", "Plants and flowers", "Culture and religion", "Science",
+  "Social issues", "Sports", "Technology", "Transport", "Travel",
+];
+
+function adobeCategoryNumber(name) {
+  const exactIdx = ADOBE_CATEGORIES.indexOf(name);
+  if (exactIdx !== -1) return exactIdx + 1;
+  const lower = (name || "").toLowerCase();
+  for (let i = 0; i < ADOBE_CATEGORIES.length; i++) {
+    const cat = ADOBE_CATEGORIES[i].toLowerCase();
+    if (lower.includes(cat) || cat.includes(lower)) return i + 1;
+  }
+  return 8; // default: Graphic resources
+}
+
+function csvField(val, quoteAll) {
   const s = String(val ?? "");
-  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+  if (quoteAll || s.includes(",") || s.includes('"') || s.includes("\n") || s.includes(";")) {
     return `"${s.replace(/"/g, '""')}"`;
   }
   return s;
 }
 
-csvBtn.addEventListener("click", () => {
-  const rows = [["Filename", "Title", "Description", "Keywords", "Adobe Category", "Shutterstock Categories"]];
-  for (const r of results) {
-    if (!r.ok) continue;
-    rows.push([
-      r.filename,
-      r.title,
-      r.description,
-      (r.keywords || []).join(", "),
-      r.adobe_category,
-      (r.shutterstock_categories || []).join(", "),
-    ]);
+function buildCsv(headers, rows, { delimiter = ",", quoteAll = false } = {}) {
+  const lines = [headers.map((h) => csvField(h, quoteAll)).join(delimiter)];
+  for (const row of rows) {
+    lines.push(row.map((v) => csvField(v, quoteAll)).join(delimiter));
   }
-  const csv = rows.map((row) => row.map(csvEscape).join(",")).join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  return lines.join("\r\n");
+}
+
+function exportAllPlatformCsvs(results, sourceExt) {
+  const rows = results
+    .filter((r) => r.ok)
+    .map((r) => {
+      const base = r.filename.replace(/\.[^/.]+$/, "");
+      const title = (r.title || "").replace(/,/g, "");
+      const description = r.description || title;
+      const keywordsStr = (r.keywords || []).join(", ");
+      const adobeCatNum = adobeCategoryNumber(r.adobe_category);
+      const shutterCatsStr = (r.shutterstock_categories || []).slice(0, 2).join(",");
+      return { base, title, description, keywordsStr, adobeCatNum, shutterCatsStr };
+    });
+
+  const files = {};
+
+  // 1. Adobe Stock
+  files["adobe_stock.csv"] = buildCsv(
+    ["Filename", "Title", "Keywords", "Category", "Releases"],
+    rows.map((r) => [`${r.base}${sourceExt}`, r.title, r.keywordsStr, r.adobeCatNum, ""])
+  );
+
+  // 2. DepositPhotos
+  files["depositphotos.csv"] = buildCsv(
+    ["Filename", "description", "Keywords", "Nudity", "Editorial"],
+    rows.map((r) => [`${r.base}${sourceExt}`, r.description, r.keywordsStr, "no", "no"]),
+    { quoteAll: true }
+  );
+
+  // 3. Magnific (semicolon-delimited)
+  files["magnific.csv"] = buildCsv(
+    ["File name", "Title", "Keywords", "Prompt", "Model"],
+    rows.map((r) => [`${r.base}${sourceExt}`, r.title, r.keywordsStr, "", ""]),
+    { delimiter: ";", quoteAll: true }
+  );
+
+  // 4. MiriCanvas
+  files["miricanvas.csv"] = buildCsv(
+    ["fileName", "uniqueId", "elementName", "keywords", "tier", "contentType"],
+    rows.map((r) => [r.base, "", r.title, r.keywordsStr, "", ""]),
+    { quoteAll: true }
+  );
+
+  // 5. Shutterstock
+  files["shutterstock.csv"] = buildCsv(
+    ["Filename", "Description", "Keywords", "Categories", "Editorial", "Mature content", "illustration"],
+    rows.map((r) => [`${r.base}${sourceExt}`, r.description, r.keywordsStr, r.shutterCatsStr, "no", "no", "yes"])
+  );
+
+  // 6. Vecteezy (underscore dihapus dari nama file)
+  files["vecteezy.csv"] = buildCsv(
+    ["Filename", "Title", "Description", "Keywords", "License"],
+    rows.map((r) => {
+      const vBase = r.base.replace(/_/g, "");
+      return [`${vBase}${sourceExt}`, r.title, r.description, r.keywordsStr, "Pro"];
+    })
+  );
+
+  return files;
+}
+
+csvBtn.addEventListener("click", async () => {
+  const sourceExt = document.getElementById("sourceExt").value || ".eps";
+  const files = exportAllPlatformCsvs(results, sourceExt);
+
+  const zip = new JSZip();
+  for (const [name, content] of Object.entries(files)) {
+    zip.file(name, content);
+  }
+  const blob = await zip.generateAsync({ type: "blob" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "stock-metadata.csv";
+  a.download = "stock-metadata-6platform.zip";
   a.click();
   URL.revokeObjectURL(url);
 });
