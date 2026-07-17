@@ -166,22 +166,41 @@ function addRow(filename, thumbSrc) {
   return tr;
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function callAnalyze(b64, nicheKeywords) {
+  const resp = await fetch("/.netlify/functions/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ imageB64: b64, mimeType: "image/png", nicheKeywords }),
+  });
+  return resp.json();
+}
+
 async function processFile(file, nicheKeywords) {
   const thumbSrc = URL.createObjectURL(file);
   const row = addRow(file.name, thumbSrc);
   const statusCell = row.querySelector(".status-cell");
   const titleCell = row.querySelector(".title-cell");
 
+  const MAX_ATTEMPTS = 20; // terus retry sampai berhasil, dibatasi biar gak infinite loop kalau API-nya down total
+
   try {
     const b64 = await fileToBase64(file);
-    statusCell.textContent = "Memproses...";
 
-    const resp = await fetch("/.netlify/functions/analyze", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ imageB64: b64, mimeType: "image/png", nicheKeywords }),
-    });
-    const data = await resp.json();
+    let data = null;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      statusCell.textContent = attempt === 1 ? "Memproses..." : `Retry ${attempt - 1}/${MAX_ATTEMPTS - 1}...`;
+      data = await callAnalyze(b64, nicheKeywords);
+      if (data.ok) break;
+      if (attempt < MAX_ATTEMPTS) {
+        const delayMs = Math.min(3000 * attempt, 20000); // jeda naik: 3s, 6s, 9s... max 20s
+        statusCell.textContent = `Gagal, tunggu ${Math.round(delayMs / 1000)}s sebelum retry ${attempt}/${MAX_ATTEMPTS - 1}...`;
+        await sleep(delayMs);
+      }
+    }
 
     if (data.ok) {
       titleCell.textContent = data.title;
@@ -189,7 +208,7 @@ async function processFile(file, nicheKeywords) {
       results.push({ filename: file.name, ...data });
     } else {
       const detailsHtml = (data.details || []).map((d) => `<div class="kw">${d}</div>`).join("");
-      statusCell.innerHTML = `<span class="status-err">Gagal: ${data.error || "unknown"}</span>${detailsHtml}`;
+      statusCell.innerHTML = `<span class="status-err">Gagal setelah ${MAX_ATTEMPTS}x coba: ${data.error || "unknown"}</span>${detailsHtml}`;
       results.push({ filename: file.name, ok: false, error: data.error });
     }
   } catch (e) {
