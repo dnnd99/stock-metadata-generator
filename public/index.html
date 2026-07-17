@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Stock Icon Metadata Generator</title>
+<style>
+  :root {
+    --bg: #0b0d12;
+    --panel: #161922;
+    --border: #2a2e3a;
+    --text: #e8e9ee;
+    --muted: #8b909e;
+    --accent: #5b8cff;
+    --ok: #34d399;
+    --err: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 24px;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  p.sub { color: var(--muted); margin-top: 0; font-size: 14px; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  input[type="text"], textarea {
+    width: 100%;
+    background: #0f1117;
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 14px;
+    margin-bottom: 14px;
+  }
+  textarea { resize: vertical; min-height: 60px; }
+  input[type="file"] { margin-bottom: 14px; }
+  button {
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 18px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.secondary { background: #2a2e3a; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 13px; }
+  th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; }
+  .status-ok { color: var(--ok); }
+  .status-err { color: var(--err); }
+  .thumb { width: 40px; height: 40px; object-fit: contain; background: white; border-radius: 4px; }
+  .kw { color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Stock Icon Metadata Generator</h1>
+  <p class="sub">Upload icon, generate title/description/keywords via Gemini Vision (+ Groq fallback), export CSV.</p>
+
+  <div class="panel">
+    <label>Niche keywords tetap (pisah koma — kosongin kalau nggak perlu)</label>
+    <textarea id="nicheKeywords" placeholder="contoh: america 250, 250th anniversary, us independence day, patriotic icon, red white blue, usa 2026, flat vector icon"></textarea>
+
+    <label>Pilih gambar icon (PNG/JPG, bisa banyak sekaligus)</label>
+    <input type="file" id="fileInput" accept="image/png,image/jpeg" multiple />
+
+    <div class="row">
+      <button id="runBtn">Generate Metadata</button>
+      <button id="csvBtn" class="secondary" disabled>Download CSV</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <table id="resultsTable">
+      <thead>
+        <tr><th></th><th>File</th><th>Title</th><th>Status</th></tr>
+      </thead>
+      <tbody id="resultsBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const fileInput = document.getElementById("fileInput");
+const runBtn = document.getElementById("runBtn");
+const csvBtn = document.getElementById("csvBtn");
+const resultsBody = document.getElementById("resultsBody");
+const nicheKeywordsInput = document.getElementById("nicheKeywords");
+
+let results = []; // { filename, title, description, keywords, adobe_category, shutterstock_categories, ok }
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function addRow(filename, thumbSrc) {
+  const tr = document.createElement("tr");
+  tr.innerHTML = `
+    <td><img class="thumb" src="${thumbSrc}" /></td>
+    <td>${filename}</td>
+    <td class="title-cell">-</td>
+    <td class="status-cell">Menunggu...</td>
+  `;
+  resultsBody.appendChild(tr);
+  return tr;
+}
+
+async function processFile(file, nicheKeywords) {
+  const thumbSrc = URL.createObjectURL(file);
+  const row = addRow(file.name, thumbSrc);
+  const statusCell = row.querySelector(".status-cell");
+  const titleCell = row.querySelector(".title-cell");
+
+  try {
+    const b64 = await fileToBase64(file);
+    statusCell.textContent = "Memproses...";
+
+    const resp = await fetch("/.netlify/functions/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ imageB64: b64, mimeType: file.type, nicheKeywords }),
+    });
+    const data = await resp.json();
+
+    if (data.ok) {
+      titleCell.textContent = data.title;
+      statusCell.innerHTML = `<span class="status-ok">OK (${data.source})</span>`;
+      results.push({ filename: file.name, ...data });
+    } else {
+      statusCell.innerHTML = `<span class="status-err">Gagal: ${data.error || "unknown"}</span>`;
+      results.push({ filename: file.name, ok: false, error: data.error });
+    }
+  } catch (e) {
+    statusCell.innerHTML = `<span class="status-err">Error: ${e.message}</span>`;
+    results.push({ filename: file.name, ok: false, error: String(e) });
+  }
+}
+
+runBtn.addEventListener("click", async () => {
+  const files = Array.from(fileInput.files || []);
+  if (!files.length) { alert("Pilih gambar dulu"); return; }
+
+  const nicheKeywords = nicheKeywordsInput.value
+    .split(",").map((s) => s.trim()).filter(Boolean);
+
+  results = [];
+  resultsBody.innerHTML = "";
+  runBtn.disabled = true;
+  csvBtn.disabled = true;
+
+  // proses satu-satu biar nggak spam rate limit sekaligus
+  for (const file of files) {
+    await processFile(file, nicheKeywords);
+  }
+
+  runBtn.disabled = false;
+  csvBtn.disabled = results.every((r) => !r.ok);
+});
+
+function csvEscape(val) {
+  const s = String(val ?? "");
+  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+csvBtn.addEventListener("click", () => {
+  const rows = [["Filename", "Title", "Description", "Keywords", "Adobe Category", "Shutterstock Categories"]];
+  for (const r of results) {
+    if (!r.ok) continue;
+    rows.push([
+      r.filename,
+      r.title,
+      r.description,
+      (r.keywords || []).join(", "),
+      r.adobe_category,
+      (r.shutterstock_categories || []).join(", "),
+    ]);
+  }
+  const csv = rows.map((row) => row.map(csvEscape).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "stock-metadata.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+});
+</script>
+</body>
+</html>
