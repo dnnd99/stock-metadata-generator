@@ -1,0 +1,1 @@
+# stock-metadata-generator
