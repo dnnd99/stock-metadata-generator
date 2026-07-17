@@ -141,32 +141,41 @@ exports.handler = async (event) => {
   const groqKeys = (process.env.GROQ_API_KEYS || "").split(",").map((k) => k.trim()).filter(Boolean);
   const prompt = buildPrompt(nicheKeywords);
 
-  let lastError = null;
+  const errors = [];
+
+  if (geminiKeys.length === 0 && groqKeys.length === 0) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ ok: false, error: "GEMINI_API_KEYS dan GROQ_API_KEYS kosong/belum keset di environment variables. Cek Site configuration > Environment variables, lalu redeploy." }),
+    };
+  }
 
   for (const key of geminiKeys) {
+    const label = `gemini ...${key.slice(-4)}`;
     try {
       const raw = await callGemini(imageB64, mimeType || "image/png", key, prompt);
       const parsed = parseJsonResponse(raw);
       if (parsed) return { statusCode: 200, body: JSON.stringify({ ok: true, source: "gemini", ...parsed }) };
-      lastError = "gemini responded but JSON invalid";
+      errors.push(`${label}: responded but JSON invalid (raw: ${String(raw).slice(0, 150)})`);
     } catch (e) {
-      lastError = e.rateLimited ? "gemini rate limited" : String(e.message || e);
+      errors.push(`${label}: ${e.rateLimited ? "rate limited (429)" : String(e.message || e)}`);
     }
   }
 
   for (const key of groqKeys) {
+    const label = `groq ...${key.slice(-4)}`;
     try {
       const raw = await callGroq(imageB64, mimeType || "image/png", key, prompt);
       const parsed = parseJsonResponse(raw);
       if (parsed) return { statusCode: 200, body: JSON.stringify({ ok: true, source: "groq", ...parsed }) };
-      lastError = "groq responded but JSON invalid";
+      errors.push(`${label}: responded but JSON invalid (raw: ${String(raw).slice(0, 150)})`);
     } catch (e) {
-      lastError = e.rateLimited ? "groq rate limited" : String(e.message || e);
+      errors.push(`${label}: ${e.rateLimited ? "rate limited (429)" : String(e.message || e)}`);
     }
   }
 
   return {
     statusCode: 502,
-    body: JSON.stringify({ ok: false, error: `Semua key gagal. Terakhir: ${lastError}` }),
+    body: JSON.stringify({ ok: false, error: `Semua key gagal.`, details: errors }),
   };
 };
