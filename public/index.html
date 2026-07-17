@@ -147,7 +147,8 @@ async function processFile(file, nicheKeywords) {
       statusCell.innerHTML = `<span class="status-ok">OK (${data.source})</span>`;
       results.push({ filename: file.name, ...data });
     } else {
-      statusCell.innerHTML = `<span class="status-err">Gagal: ${data.error || "unknown"}</span>`;
+      const detailsHtml = (data.details || []).map((d) => `<div class="kw">${d}</div>`).join("");
+      statusCell.innerHTML = `<span class="status-err">Gagal: ${data.error || "unknown"}</span>${detailsHtml}`;
       results.push({ filename: file.name, ok: false, error: data.error });
     }
   } catch (e) {
