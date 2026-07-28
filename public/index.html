@@ -160,12 +160,15 @@ function extractVideoFrame(file) {
     video.muted = true;
     video.playsInline = true;
     video.preload = "auto";
-    // sebagian browser gak bener2 decode frame kalau video-nya offscreen/gak attached ke DOM
+    // sembunyikan visual tapi JANGAN pakai ukuran 1x1 — beberapa browser
+    // (terutama Chrome) throttle/skip decoding video kalau area render-nya
+    // nyaris nol, bikin onseeked gak pernah fire sama sekali.
     video.style.position = "fixed";
-    video.style.top = "-9999px";
-    video.style.left = "-9999px";
-    video.style.width = "1px";
-    video.style.height = "1px";
+    video.style.top = "0";
+    video.style.left = "0";
+    video.style.opacity = "0";
+    video.style.pointerEvents = "none";
+    video.style.zIndex = "-1";
     document.body.appendChild(video);
 
     let seeked = false;
@@ -233,10 +236,10 @@ function extractVideoFrame(file) {
 
     video.onerror = () => cleanupAndReject(new Error("Gagal load video (format/codec mungkin gak didukung browser)"));
 
-    // safety timeout: kalau dalam 10 detik gak ada progress sama sekali, jangan nge-hang selamanya
+    // safety timeout: kalau dalam 25 detik gak ada progress sama sekali, jangan nge-hang selamanya
     setTimeout(() => {
-      if (!seeked) cleanupAndReject(new Error("Timeout: video gagal di-seek dalam 10 detik"));
-    }, 10000);
+      if (!seeked) cleanupAndReject(new Error("Timeout: video gagal di-seek dalam 25 detik"));
+    }, 25000);
   });
 }
 
