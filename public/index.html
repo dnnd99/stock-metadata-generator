@@ -159,14 +159,25 @@ function extractVideoFrame(file) {
     video.src = url;
     video.muted = true;
     video.playsInline = true;
+    video.preload = "auto";
+    // sebagian browser gak bener2 decode frame kalau video-nya offscreen/gak attached ke DOM
+    video.style.position = "fixed";
+    video.style.top = "-9999px";
+    video.style.left = "-9999px";
+    video.style.width = "1px";
+    video.style.height = "1px";
+    document.body.appendChild(video);
 
-    video.onloadedmetadata = () => {
-      // ambil frame di tengah durasi (biar bukan frame item/logo intro)
-      video.currentTime = Math.min(video.duration / 2, video.duration - 0.05);
+    let seeked = false;
+    const cleanupAndReject = (err) => {
+      video.remove();
+      URL.revokeObjectURL(url);
+      reject(err);
     };
 
-    video.onseeked = () => {
+    const captureFrame = () => {
       let { videoWidth: width, videoHeight: height } = video;
+      if (!width || !height) return cleanupAndReject(new Error("Video tidak punya dimensi (corrupt/unsupported codec)"));
       if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
         const scale = MAX_DIMENSION / Math.max(width, height);
         width = Math.round(width * scale);
@@ -177,6 +188,7 @@ function extractVideoFrame(file) {
       canvas.height = height;
       const ctx = canvas.getContext("2d");
       ctx.drawImage(video, 0, 0, width, height);
+      video.remove();
       URL.revokeObjectURL(url);
       canvas.toBlob(
         (blob) => {
@@ -191,7 +203,40 @@ function extractVideoFrame(file) {
       );
     };
 
-    video.onerror = () => reject(new Error("Gagal load video"));
+    // waitFrame: pastikan frame beneran udah di-decode & siap digambar
+    // (readyState >= 2 = HAVE_CURRENT_DATA), bukan cuma nunggu event 'seeked'
+    // yang kadang fire duluan sebelum GPU/decoder selesai render frame-nya.
+    const waitFrame = () => {
+      if (video.readyState >= 2) {
+        // 2 rAF ekstra biar frame yang di-seek bener2 udah ke-paint ke video element
+        requestAnimationFrame(() => requestAnimationFrame(captureFrame));
+      } else {
+        requestAnimationFrame(waitFrame);
+      }
+    };
+
+    video.onloadeddata = () => {
+      if (seeked) return; // udah di-handle onseeked
+      // fallback kalau onseeked gak pernah fire (misal duration super pendek)
+    };
+
+    video.onloadedmetadata = () => {
+      // ambil frame di tengah durasi (biar bukan frame item/logo intro)
+      const target = Math.min((video.duration || 0) / 2, (video.duration || 0.2) - 0.05);
+      video.currentTime = Math.max(target, 0);
+    };
+
+    video.onseeked = () => {
+      seeked = true;
+      waitFrame();
+    };
+
+    video.onerror = () => cleanupAndReject(new Error("Gagal load video (format/codec mungkin gak didukung browser)"));
+
+    // safety timeout: kalau dalam 10 detik gak ada progress sama sekali, jangan nge-hang selamanya
+    setTimeout(() => {
+      if (!seeked) cleanupAndReject(new Error("Timeout: video gagal di-seek dalam 10 detik"));
+    }, 10000);
   });
 }
 
