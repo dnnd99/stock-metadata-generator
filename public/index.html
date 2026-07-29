@@ -321,6 +321,61 @@ async function processFile(file, nicheKeywords) {
   }
 }
 
+function playDoneBeep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = "sine";
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.35);
+  } catch (e) {
+    // audio nggak didukung / diblokir browser, abaikan aja
+  }
+}
+
+function showDoneBanner(successCount, failCount) {
+  const existing = document.getElementById("doneBanner");
+  if (existing) existing.remove();
+
+  const banner = document.createElement("div");
+  banner.id = "doneBanner";
+  banner.style.cssText =
+    "position:fixed; top:16px; left:50%; transform:translateX(-50%); z-index:9999;" +
+    "background:#16a34a; color:white; padding:12px 20px; border-radius:10px;" +
+    "font-weight:bold; font-size:14px; box-shadow:0 8px 24px rgba(0,0,0,0.25);" +
+    "display:flex; align-items:center; gap:10px;";
+  banner.innerHTML =
+    `✅ Selesai! ${successCount} berhasil${failCount > 0 ? `, ${failCount} gagal` : ""}.` +
+    `<button style="background:rgba(255,255,255,0.2); border:none; color:white; border-radius:6px; padding:2px 8px; cursor:pointer;">×</button>`;
+  banner.querySelector("button").onclick = () => banner.remove();
+  document.body.appendChild(banner);
+  setTimeout(() => banner.remove(), 8000);
+}
+
+function notifyProcessDone(successCount, failCount) {
+  showDoneBanner(successCount, failCount);
+  playDoneBeep();
+
+  // Notifikasi browser (muncul walau tab lagi nggak aktif) — cuma jalan
+  // kalau izinnya udah di-allow sebelumnya.
+  if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+    new Notification("Stock Metadata Generator", {
+      body: `Proses selesai — ${successCount} berhasil${failCount > 0 ? `, ${failCount} gagal` : ""}.`,
+    });
+  }
+}
+
+// Minta izin notifikasi browser sekali di awal (biar bisa dipakai nanti)
+if (typeof Notification !== "undefined" && Notification.permission === "default") {
+  Notification.requestPermission();
+}
+
 runBtn.addEventListener("click", async () => {
   const files = Array.from(fileInput.files || []);
   if (!files.length) { alert("Pilih gambar dulu"); return; }
@@ -349,6 +404,10 @@ runBtn.addEventListener("click", async () => {
 
   runBtn.disabled = false;
   csvBtn.disabled = results.every((r) => !r.ok);
+
+  const successCount = results.filter((r) => r.ok).length;
+  const failCount = results.length - successCount;
+  notifyProcessDone(successCount, failCount);
 });
 
 const ADOBE_CATEGORIES = [
