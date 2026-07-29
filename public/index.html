@@ -273,11 +273,11 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function callAnalyze(b64, nicheKeywords) {
+async function callAnalyze(b64, nicheKeywords, isVideoFile) {
   const resp = await fetch("/.netlify/functions/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ imageB64: b64, mimeType: "image/png", nicheKeywords }),
+    body: JSON.stringify({ imageB64: b64, mimeType: "image/png", nicheKeywords, isVideo: !!isVideoFile }),
   });
   return resp.json();
 }
@@ -297,7 +297,7 @@ async function processFile(file, nicheKeywords) {
     let data = null;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       statusCell.textContent = attempt === 1 ? "Memproses..." : `Retry ${attempt - 1}/${MAX_ATTEMPTS - 1}...`;
-      data = await callAnalyze(b64, nicheKeywords);
+      data = await callAnalyze(b64, nicheKeywords, isVideo(file));
       if (data.ok) break;
       if (attempt < MAX_ATTEMPTS) {
         const delayMs = Math.min(3000 * attempt, 20000); // jeda naik: 3s, 6s, 9s... max 20s
@@ -309,7 +309,7 @@ async function processFile(file, nicheKeywords) {
     if (data.ok) {
       titleCell.textContent = data.title;
       statusCell.innerHTML = `<span class="status-ok">OK (${data.source})</span>`;
-      results.push({ filename: file.name, ...data });
+      results.push({ filename: file.name, isVideo: isVideo(file), ...data });
     } else {
       const detailsHtml = (data.details || []).map((d) => `<div class="kw">${d}</div>`).join("");
       statusCell.innerHTML = `<span class="status-err">Gagal setelah ${MAX_ATTEMPTS}x coba: ${data.error || "unknown"}</span>${detailsHtml}`;
@@ -359,15 +359,24 @@ const ADOBE_CATEGORIES = [
   "Social issues", "Sports", "Technology", "Transport", "Travel",
 ];
 
-function adobeCategoryNumber(name) {
-  const exactIdx = ADOBE_CATEGORIES.indexOf(name);
+// Daftar kategori khusus VIDEO Adobe Stock (beda dari daftar foto/vector di atas).
+const ADOBE_VIDEO_CATEGORIES = [
+  "Animals/Wildlife", "Arts", "Backgrounds/Textures", "Buildings/Landmarks",
+  "Business/Finance", "Education", "Food and drink", "Healthcare/Medical",
+  "Holidays", "Industrial", "Nature", "Objects", "People", "Religion",
+  "Science", "Signs/Symbols", "Sports/Recreation", "Technology", "Transportation",
+];
+
+function adobeCategoryNumber(name, isVideoFile) {
+  const list = isVideoFile ? ADOBE_VIDEO_CATEGORIES : ADOBE_CATEGORIES;
+  const exactIdx = list.indexOf(name);
   if (exactIdx !== -1) return exactIdx + 1;
   const lower = (name || "").toLowerCase();
-  for (let i = 0; i < ADOBE_CATEGORIES.length; i++) {
-    const cat = ADOBE_CATEGORIES[i].toLowerCase();
+  for (let i = 0; i < list.length; i++) {
+    const cat = list[i].toLowerCase();
     if (lower.includes(cat) || cat.includes(lower)) return i + 1;
   }
-  return 8; // default: Graphic resources
+  return isVideoFile ? 12 : 8; // default: Objects (video) / Graphic resources (foto)
 }
 
 function csvField(val, quoteAll) {
@@ -394,7 +403,7 @@ function exportAllPlatformCsvs(results, sourceExt) {
       const title = (r.title || "").replace(/,/g, "");
       const description = r.description || title;
       const keywordsStr = (r.keywords || []).join(", ");
-      const adobeCatNum = adobeCategoryNumber(r.adobe_category);
+      const adobeCatNum = adobeCategoryNumber(r.adobe_category, r.isVideo);
       const shutterCatsStr = (r.shutterstock_categories || []).slice(0, 2).join(",");
       return { base, title, description, keywordsStr, adobeCatNum, shutterCatsStr };
     });
