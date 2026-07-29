@@ -32,12 +32,25 @@ const SHUTTERSTOCK_CATEGORIES = [
   "Sports/Recreation", "Technology", "Transportation", "Vintage",
 ];
 
+// 7 kategori di atas (Abstract, Beauty/Fashion, Celebrities, Interiors,
+// Miscellaneous, Parks/Outdoor, Vintage) TIDAK berlaku buat video menurut
+// dokumentasi resmi Shutterstock -- kalau kepilih buat video, upload
+// bakal ditolak "invalid category". Jadi video wajib pilih dari daftar
+// yang udah difilter ini.
+const SHUTTERSTOCK_VIDEO_CATEGORIES = [
+  "Animals/Wildlife", "Arts", "Backgrounds/Textures", "Buildings/Landmarks",
+  "Business/Finance", "Education", "Food and drink", "Healthcare/Medical",
+  "Holidays", "Industrial", "Nature", "Objects", "People", "Religion",
+  "Science", "Signs/Symbols", "Sports/Recreation", "Technology", "Transportation",
+];
+
 const REQUIRED_FIELDS = ["title", "description", "keywords", "adobe_category", "shutterstock_categories"];
 
 function buildPrompt(nicheKeywords, isVideoFile) {
   const adobeCategoryList = isVideoFile ? ADOBE_VIDEO_CATEGORIES : ADOBE_CATEGORIES;
+  const shutterCategoryList = isVideoFile ? SHUTTERSTOCK_VIDEO_CATEGORIES : SHUTTERSTOCK_CATEGORIES;
   const adobeStr = adobeCategoryList.map((c) => `"${c}"`).join(", ");
-  const shutterStr = SHUTTERSTOCK_CATEGORIES.map((c) => `"${c}"`).join(", ");
+  const shutterStr = shutterCategoryList.map((c) => `"${c}"`).join(", ");
   const nicheStr = (nicheKeywords || []).join(", ");
   const nicheInstruction = nicheKeywords && nicheKeywords.length
     ? `WAJIB sisipkan keyword tetap berikut ini di SEMUA gambar dalam batch ini, selain keyword spesifik objek yang terlihat di gambar: ${nicheStr}.\n`
