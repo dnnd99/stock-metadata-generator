@@ -14,6 +14,15 @@ const ADOBE_CATEGORIES = [
   "Social issues", "Sports", "Technology", "Transport", "Travel",
 ];
 
+// Adobe Stock pakai daftar kategori BEDA khusus buat video (nomor 1-19,
+// urutan & nama beda dari kategori foto/vector di atas).
+const ADOBE_VIDEO_CATEGORIES = [
+  "Animals/Wildlife", "Arts", "Backgrounds/Textures", "Buildings/Landmarks",
+  "Business/Finance", "Education", "Food and drink", "Healthcare/Medical",
+  "Holidays", "Industrial", "Nature", "Objects", "People", "Religion",
+  "Science", "Signs/Symbols", "Sports/Recreation", "Technology", "Transportation",
+];
+
 const SHUTTERSTOCK_CATEGORIES = [
   "Abstract", "Animals/Wildlife", "Arts", "Backgrounds/Textures",
   "Beauty/Fashion", "Buildings/Landmarks", "Business/Finance", "Celebrities",
@@ -25,8 +34,9 @@ const SHUTTERSTOCK_CATEGORIES = [
 
 const REQUIRED_FIELDS = ["title", "description", "keywords", "adobe_category", "shutterstock_categories"];
 
-function buildPrompt(nicheKeywords) {
-  const adobeStr = ADOBE_CATEGORIES.map((c) => `"${c}"`).join(", ");
+function buildPrompt(nicheKeywords, isVideoFile) {
+  const adobeCategoryList = isVideoFile ? ADOBE_VIDEO_CATEGORIES : ADOBE_CATEGORIES;
+  const adobeStr = adobeCategoryList.map((c) => `"${c}"`).join(", ");
   const shutterStr = SHUTTERSTOCK_CATEGORIES.map((c) => `"${c}"`).join(", ");
   const nicheStr = (nicheKeywords || []).join(", ");
   const nicheInstruction = nicheKeywords && nicheKeywords.length
@@ -132,14 +142,14 @@ exports.handler = async (event) => {
     return { statusCode: 400, body: "Invalid JSON body" };
   }
 
-  const { imageB64, mimeType, nicheKeywords } = body;
+  const { imageB64, mimeType, nicheKeywords, isVideo } = body;
   if (!imageB64) {
     return { statusCode: 400, body: JSON.stringify({ error: "imageB64 wajib diisi" }) };
   }
 
   const geminiKeys = (process.env.GEMINI_API_KEYS || "").split(",").map((k) => k.trim()).filter(Boolean);
   const groqKeys = (process.env.GROQ_API_KEYS || "").split(",").map((k) => k.trim()).filter(Boolean);
-  const prompt = buildPrompt(nicheKeywords);
+  const prompt = buildPrompt(nicheKeywords, !!isVideo);
 
   const errors = [];
 
