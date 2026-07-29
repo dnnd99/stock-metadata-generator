@@ -77,9 +77,9 @@
     <label>Niche keywords tetap (pisah koma — kosongin kalau nggak perlu)</label>
     <textarea id="nicheKeywords" placeholder="contoh: america 250, 250th anniversary, us independence day, patriotic icon, red white blue, usa 2026, flat vector icon"></textarea>
 
-    <label>Pilih gambar icon / video (PNG/JPG/MP4, bisa banyak sekaligus)</label>
-    <input type="file" id="fileInput" accept="image/png,image/jpeg,video/mp4" multiple />
-    <p class="kw" style="margin-top:-8px;">Video MP4 otomatis diambil 1 frame tengahnya buat digenerate metadata-nya.</p>
+    <label>Pilih gambar icon / video (PNG/JPG/MP4/MOV, bisa banyak sekaligus)</label>
+    <input type="file" id="fileInput" accept="image/png,image/jpeg,video/mp4,video/quicktime,.mov" multiple />
+    <p class="kw" style="margin-top:-8px;">Video MP4/MOV otomatis diambil 1 frame tengahnya buat digenerate metadata-nya.</p>
 
     <label>Ekstensi file yang mau dijual (buat nama file di CSV)</label>
     <select id="sourceExt">
@@ -89,6 +89,7 @@
       <option value=".png">.png</option>
       <option value=".jpg">.jpg</option>
       <option value=".mp4">.mp4</option>
+      <option value=".mov">.mov</option>
     </select>
 
     <div class="row" style="margin-top:14px;">
@@ -244,7 +245,11 @@ function extractVideoFrame(file) {
 }
 
 function isVideo(file) {
-  return file.type === "video/mp4" || /\.mp4$/i.test(file.name);
+  return (
+    file.type === "video/mp4" ||
+    file.type === "video/quicktime" ||
+    /\.(mp4|mov)$/i.test(file.name)
+  );
 }
 
 // return { b64, thumbSrc } dalam satu panggilan biar video cuma di-extract 1x
