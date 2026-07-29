@@ -56,14 +56,24 @@ function buildPrompt(nicheKeywords, isVideoFile) {
     ? `WAJIB sisipkan keyword tetap berikut ini di SEMUA gambar dalam batch ini, selain keyword spesifik objek yang terlihat di gambar: ${nicheStr}.\n`
     : "";
 
-  return `Kamu adalah asisten metadata untuk Adobe Stock vector icon.
-Lihat gambar icon yang diberikan, lalu buatkan metadata dalam format JSON PERSIS seperti ini,
-tanpa teks tambahan, tanpa markdown code block:
+  const contentTypeLabel = isVideoFile
+    ? "video stock footage / motion graphic (frame tengah dari video ini mewakili keseluruhan isi videonya)"
+    : "vector icon";
+  const contentTypeInstruction = isVideoFile
+    ? "Lihat frame video yang diberikan (mewakili keseluruhan video), lalu buatkan metadata berdasarkan ADEGAN/GERAKAN/OBJEK yang terlihat di video tersebut."
+    : "Lihat gambar icon yang diberikan, lalu buatkan metadata dalam format JSON PERSIS seperti ini.";
+  const keywordStyleNote = isVideoFile
+    ? "keyword harus relevan buat VIDEO/MOTION GRAPHIC (contoh gaya: 'motion graphic', 'animation', 'seamless loop', 'video background', 'stock footage' + keyword objek/adegan spesifik yang terlihat), JANGAN pakai istilah khas vector icon (misal 'flat icon', 'line icon', 'vector illustration')."
+    : "keyword harus relevan buat vector icon (gaya, style, penggunaan icon).";
+
+  return `Kamu adalah asisten metadata untuk Adobe Stock, khusus konten tipe: ${contentTypeLabel}.
+${contentTypeInstruction}
+Format JSON PERSIS seperti ini, tanpa teks tambahan, tanpa markdown code block:
 
 {
-  "title": "judul singkat deskriptif berdasarkan isi gambar (jangan paksa nyebut niche kalau objeknya nggak langsung relevan), maksimal 70 karakter, dalam bahasa Inggris, TANPA tanda koma",
-  "description": "1-2 kalimat deskripsi lebih detail tentang isi visual gambar, dalam bahasa Inggris, maksimal 200 karakter",
-  "keywords": ["keyword1", "keyword2", "... total 25-49 keyword relevan berdasarkan isi visual gambar, urutan dari paling penting, TANPA duplikat"],
+  "title": "judul singkat deskriptif berdasarkan isi ${isVideoFile ? "video" : "gambar"} (jangan paksa nyebut niche kalau objeknya nggak langsung relevan), maksimal 70 karakter, dalam bahasa Inggris, TANPA tanda koma",
+  "description": "1-2 kalimat deskripsi lebih detail tentang isi visual ${isVideoFile ? "video" : "gambar"}, dalam bahasa Inggris, maksimal 200 karakter",
+  "keywords": ["keyword1", "keyword2", "... total 25-49 keyword relevan berdasarkan isi visual, urutan dari paling penting, TANPA duplikat — ${keywordStyleNote}"],
   "adobe_category": "pilih PERSIS SATU dari daftar ini (salin persis, case-sensitive): [${adobeStr}]",
   "shutterstock_categories": ["pilih 1 sampai 2 dari daftar ini (salin persis): [${shutterStr}]"]
 }
